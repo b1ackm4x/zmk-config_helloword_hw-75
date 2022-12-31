@@ -30,6 +30,8 @@ config ZMK_RGB_UNDERGLOW
 config ZMK_DISPLAY
 	select SSD1306
 	select I2C
+	select SSD16XX
+	select SPI
 
 if ZMK_DISPLAY
 
@@ -53,7 +55,7 @@ config LVGL_BITS_PER_PIXEL
 	default 1
 
 choice LVGL_COLOR_DEPTH
-	default LVGL_COLOR_DEPTH_16
+	default LVGL_COLOR_DEPTH_1
 endchoice
 
 endif # ZMK_DISPLAY
