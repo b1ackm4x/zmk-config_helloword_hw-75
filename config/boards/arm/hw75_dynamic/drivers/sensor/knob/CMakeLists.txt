@@ -6,4 +6,5 @@ zephyr_library_include_directories(${CMAKE_CURRENT_SOURCE_DIR}/include)
 
 add_subdirectory_ifdef(CONFIG_KNOB lib)
 
+add_subdirectory_ifdef(CONFIG_KNOB inverter)
 add_subdirectory_ifdef(CONFIG_KNOB encoder)
