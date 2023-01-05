@@ -26,4 +26,8 @@ config KNOB_DRIVER_INIT_PRIORITY
 rsource "inverter/Kconfig"
 rsource "encoder/Kconfig"
 
+config KNOB_PORT
+	bool "Knob sources ported from original HelloWord-Dynamic-fw"
+	default y
+
 endif # KNOB

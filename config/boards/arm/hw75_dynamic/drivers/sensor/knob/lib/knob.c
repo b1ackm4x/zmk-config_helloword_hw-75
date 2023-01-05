@@ -14,13 +14,28 @@
 #include <knob/drivers/inverter.h>
 #include <knob/drivers/encoder.h>
 
+#if CONFIG_KNOB_PORT
+#include "port/driver.h"
+#include "port/encoder.h"
+#include "port/motor.h"
+#include "port/knob_sim.h"
+#endif
+
 LOG_MODULE_REGISTER(knob, CONFIG_ZMK_LOG_LEVEL);
 
 struct knob_data {
 	const struct device *dev;
 	int32_t delta;
 
+#if CONFIG_KNOB_PORT
+	struct driver driver;
+	struct encoder encoder;
+	struct motor motor;
+	struct knob_sim knob;
+	int last_pos;
+#else
 	float last_radian;
+#endif
 
 	sensor_trigger_handler_t handler;
 	const struct sensor_trigger *trigger;
@@ -86,6 +101,29 @@ static void knob_thread(void *p1, void *p2, void *p3)
 	struct knob_data *data = dev->data;
 	const struct knob_config *config = dev->config;
 
+#if CONFIG_KNOB_PORT
+	int pos, pos_delta;
+
+	knob_sim_init(&data->knob, &data->motor);
+	knob_sim_set_enable(&data->knob, true);
+	knob_sim_set_mode(&data->knob, MODE_SPIN);
+
+	while (1) {
+		knob_sim_tick(&data->knob);
+
+		pos = knob_sim_get_encoder_mode_pos(&data->knob);
+		pos_delta = pos - data->last_pos;
+		data->last_pos = pos;
+
+		if (pos_delta > 0) {
+			knob_fires(dev, 1);
+		} else if (pos_delta < 0) {
+			knob_fires(dev, -1);
+		}
+
+		k_usleep(config->tick_interval_us);
+	}
+#else
 	float radian, radian_delta;
 	float rpp = config->radian_per_pulse;
 
@@ -109,6 +147,7 @@ static void knob_thread(void *p1, void *p2, void *p3)
 
 		k_usleep(config->tick_interval_us);
 	}
+#endif
 }
 
 static const struct sensor_driver_api knob_driver_api = {
@@ -134,7 +173,14 @@ int knob_init(const struct device *dev)
 		return -ENODEV;
 	}
 
+#if CONFIG_KNOB_PORT
+	driver_create(&data->driver, config->inverter);
+	encoder_create(&data->encoder, config->encoder);
+	motor_create(&data->motor, 7, &data->driver, &data->encoder);
+	knob_sim_create(&data->knob);
+#else
 	data->last_radian = encoder_get_radian(config->encoder);
+#endif
 
 	k_thread_create(&data->thread, data->thread_stack, CONFIG_KNOB_THREAD_STACK_SIZE,
 			(k_thread_entry_t)knob_thread, (void *)dev, 0, NULL,
