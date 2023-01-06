@@ -40,7 +40,13 @@ static void inverter_stm32_set_powers(const struct device *dev, float va, float 
 
 static void inverter_stm32_start(const struct device *dev)
 {
+	struct inverter_stm32_data *data = dev->data;
 	const struct inverter_stm32_config *config = dev->config;
+
+	for (int i = 0; i < ARRAY_SIZE(config->pwm_channels); i++) {
+		HAL_TIM_PWM_Start(&data->th, timer_channels[config->pwm_channels[i]]);
+		HAL_TIMEx_PWMN_Start(&data->th, timer_channels[config->pwm_channels[i]]);
+	}
 
 	if (config->enable_gpio.port != NULL) {
 		gpio_pin_set_dt(&config->enable_gpio, true);
@@ -52,9 +58,15 @@ static void inverter_stm32_start(const struct device *dev)
 
 static void inverter_stm32_stop(const struct device *dev)
 {
+	struct inverter_stm32_data *data = dev->data;
 	const struct inverter_stm32_config *config = dev->config;
 
 	inverter_stm32_set_powers(dev, 0, 0, 0);
+
+	for (int i = 0; i < ARRAY_SIZE(config->pwm_channels); i++) {
+		HAL_TIM_PWM_Stop(&data->th, timer_channels[config->pwm_channels[i]]);
+		HAL_TIMEx_PWMN_Stop(&data->th, timer_channels[config->pwm_channels[i]]);
+	}
 
 	if (config->enable_gpio.port != NULL) {
 		gpio_pin_set_dt(&config->enable_gpio, false);
@@ -149,11 +161,6 @@ static int inverter_stm32_init(const struct device *dev)
 	if (HAL_TIMEx_ConfigBreakDeadTime(&data->th, &bdt) != HAL_OK) {
 		LOG_ERR("%s: HAL_TIMEx_ConfigBreakDeadTime failed", dev->name);
 		return -EIO;
-	}
-
-	for (int i = 0; i < ARRAY_SIZE(config->pwm_channels); i++) {
-		HAL_TIM_PWM_Start(&data->th, timer_channels[config->pwm_channels[i]]);
-		HAL_TIMEx_PWMN_Start(&data->th, timer_channels[config->pwm_channels[i]]);
 	}
 
 	return 0;
