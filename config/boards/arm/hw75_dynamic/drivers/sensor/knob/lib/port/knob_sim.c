@@ -34,8 +34,7 @@ void knob_sim_init(struct knob_sim *knob, struct motor *motor)
 
 	if (motor_init(motor, NOT_SET, CW)) {
 		LOG_INF("ZeroElectricAngleOffset: %d | Encoder direction: %d",
-			(int)motor->zero_electric_angle_offset,
-			motor->encoder->count_direction == CW);
+			(int)motor->zero_electric_angle_offset, motor->encoder_dir);
 		motor->target = 0;
 		motor_set_enable(motor, false);
 	} else {

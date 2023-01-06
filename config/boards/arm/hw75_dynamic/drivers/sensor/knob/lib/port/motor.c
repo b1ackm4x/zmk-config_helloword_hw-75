@@ -5,9 +5,12 @@
 #include <arm_math.h>
 
 #include <knob/math.h>
+#include <knob/drivers/inverter.h>
 
 #include <logging/log.h>
 LOG_MODULE_REGISTER(port_motor, CONFIG_ZMK_LOG_LEVEL);
+
+#define MOTOR_VOLTAGE (12.0f)
 
 bool motor_init_foc(struct motor *motor, float zero_electric_offset,
 		    enum encoder_direction sensor_direction);
@@ -17,31 +20,34 @@ void motor_foc_output_tick(struct motor *motor);
 void motor_set_phase_voltage(struct motor *motor, float voltage_q, float voltage_d,
 			     float angle_electrical);
 
-void motor_create(struct motor *motor, int pole_pairs, struct driver *driver,
-		  struct encoder *encoder)
+void motor_create(struct motor *motor, int pole_pairs, const struct device *inverter,
+		  const struct device *encoder)
 {
 	memset(motor, 0, sizeof(struct motor));
 	motor->target = 0;
 	motor->error = NO_ERROR;
-	motor->config.voltage_limit = 12.0f;
+	motor->config.voltage_limit = MOTOR_VOLTAGE;
 	motor->config.velocity_limit = 20.0f;
 	motor->config.voltage_used_for_sensor_align = 1.0f;
 	motor->config.control_mode = ANGLE;
 	lpf_create(&motor->config.lpf_velocity, 0.1f);
 	lpf_create(&motor->config.lpf_angle, 0.03f);
-	pid_create(&motor->config.pid_velocity, 0.5f, 10.0f, 0.0f, 1000.0f, 12.0f);
+	pid_create(&motor->config.pid_velocity, 0.5f, 10.0f, 0.0f, 1000.0f, MOTOR_VOLTAGE);
 	pid_create(&motor->config.pid_angle, 20.0f, 0, 0, 0, 20.0f);
 	motor->zero_electric_angle_offset = NOT_SET;
-	motor->driver = driver;
+	motor->inverter = inverter;
 	motor->encoder = encoder;
 	motor->enabled = false;
 	motor->pole_pairs = pole_pairs;
+
+	motor->encoder_dir = UNKNOWN;
+	encoder_init(&motor->encoder_state, encoder);
 }
 
 bool motor_init(struct motor *motor, float zero_electric_offset, enum encoder_direction encoder_dir)
 {
-	if (motor->config.voltage_limit > motor->driver->voltage_power_supply) {
-		motor->config.voltage_limit = motor->driver->voltage_power_supply;
+	if (motor->config.voltage_limit > MOTOR_VOLTAGE) {
+		motor->config.voltage_limit = MOTOR_VOLTAGE;
 	}
 
 	if (motor->config.voltage_used_for_sensor_align > motor->config.voltage_limit) {
@@ -57,13 +63,17 @@ bool motor_init(struct motor *motor, float zero_electric_offset, enum encoder_di
 void motor_set_enable(struct motor *motor, bool enable)
 {
 	motor->enabled = enable;
-	driver_set_enable(motor->driver, enable);
+	if (enable) {
+		inverter_start(motor->inverter);
+	} else {
+		inverter_stop(motor->inverter);
+	}
 }
 
 float motor_get_estimate_angle(struct motor *motor)
 {
 	motor->state.raw_angle =
-		(float)motor->encoder->count_direction * encoder_get_full_angle(motor->encoder);
+		(float)motor->encoder_dir * encoder_get_full_angle(&motor->encoder_state);
 	motor->state.est_angle = lpf_input(&motor->config.lpf_angle, motor->state.raw_angle);
 
 	return motor->state.est_angle;
@@ -72,7 +82,7 @@ float motor_get_estimate_angle(struct motor *motor)
 float motor_get_estimate_velocity(struct motor *motor)
 {
 	motor->state.raw_velocity =
-		(float)motor->encoder->count_direction * encoder_get_velocity(motor->encoder);
+		(float)motor->encoder_dir * encoder_get_velocity(&motor->encoder_state);
 	motor->state.est_velocity =
 		lpf_input(&motor->config.lpf_velocity, motor->state.raw_velocity);
 
@@ -81,8 +91,8 @@ float motor_get_estimate_velocity(struct motor *motor)
 
 float motor_get_electrical_angle(struct motor *motor)
 {
-	return norm_rad((float)(motor->encoder->count_direction * motor->pole_pairs) *
-				encoder_get_lap_angle(motor->encoder) -
+	return norm_rad((float)(motor->encoder_dir * motor->pole_pairs) *
+				encoder_get_lap_angle(&motor->encoder_state) -
 			motor->zero_electric_angle_offset);
 }
 
@@ -97,13 +107,13 @@ bool motor_init_foc(struct motor *motor, float zero_electric_offset,
 {
 	if (ASSERT(zero_electric_offset)) {
 		motor->zero_electric_angle_offset = zero_electric_offset;
-		motor->encoder->count_direction = sensor_direction;
+		motor->encoder_dir = sensor_direction;
 	}
 
 	if (!motor_align_sensor(motor))
 		return false;
 
-	encoder_update(motor->encoder);
+	encoder_update(&motor->encoder_state, motor->encoder);
 	motor->estimate_angle = motor_get_estimate_angle(motor);
 
 	return true;
@@ -113,7 +123,7 @@ bool motor_align_sensor(struct motor *motor)
 {
 	// TODO
 	motor->zero_electric_angle_offset = 0;
-	motor->encoder->count_direction = CW;
+	motor->encoder_dir = CW;
 	return true;
 }
 
@@ -150,7 +160,7 @@ void motor_close_loop_control_tick(struct motor *motor)
 
 void motor_foc_output_tick(struct motor *motor)
 {
-	encoder_update(motor->encoder);
+	encoder_update(&motor->encoder_state, motor->encoder);
 
 	if (!motor->enabled)
 		return;
@@ -169,12 +179,12 @@ void motor_set_phase_voltage(struct motor *motor, float voltage_q, float voltage
 	float uOut;
 
 	if (voltage_d != 0) {
-		float tmp;
-		arm_sqrt_f32(voltage_d * voltage_d + voltage_q * voltage_q, &tmp);
-		uOut = tmp / motor->driver->voltage_power_supply;
+		float mod;
+		arm_sqrt_f32(voltage_d * voltage_d + voltage_q * voltage_q, &mod);
+		uOut = mod / MOTOR_VOLTAGE;
 		angle_electrical = norm_rad(angle_electrical + atan2(voltage_q, voltage_d));
 	} else {
-		uOut = voltage_q / motor->driver->voltage_power_supply;
+		uOut = voltage_q / MOTOR_VOLTAGE;
 		angle_electrical = norm_rad(angle_electrical + PI_2);
 	}
 	uint8_t sec = (int)(floor(angle_electrical / PI_3)) + 1;
@@ -220,20 +230,15 @@ void motor_set_phase_voltage(struct motor *motor, float voltage_q, float voltage
 		tC = 0.0f;
 	}
 
-	// calculate the phase voltages and center
-	motor->voltage_a = tA * motor->driver->voltage_power_supply;
-	motor->voltage_b = tB * motor->driver->voltage_power_supply;
-	motor->voltage_c = tC * motor->driver->voltage_power_supply;
-
-	driver_set_voltage(motor->driver, motor->voltage_a, motor->voltage_b, motor->voltage_c);
+	inverter_set_powers(motor->inverter, tA, tB, tC);
 }
 
 void motor_set_torque_limit(struct motor *motor, float val)
 {
 	motor->config.voltage_limit = val;
 
-	if (motor->config.voltage_limit > motor->driver->voltage_power_supply) {
-		motor->config.voltage_limit = motor->driver->voltage_power_supply;
+	if (motor->config.voltage_limit > MOTOR_VOLTAGE) {
+		motor->config.voltage_limit = MOTOR_VOLTAGE;
 	}
 
 	if (motor->config.voltage_used_for_sensor_align > motor->config.voltage_limit) {

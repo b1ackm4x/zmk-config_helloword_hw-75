@@ -2,12 +2,13 @@
 
 #include <stdint.h>
 #include <stdbool.h>
+#include <device.h>
+
+#include <knob/encoder_state.h>
 
 #include "lowpass_filter.h"
 #include "pid.h"
 #include "math_utils.h"
-#include "driver.h"
-#include "encoder.h"
 
 enum motor_control_mode {
 	TORQUE,
@@ -51,12 +52,15 @@ struct motor {
 	struct motor_state state;
 	struct motor_voltage voltage;
 	float zero_electric_angle_offset;
-	struct driver *driver;
-	struct encoder *encoder;
+
+	const struct device *inverter;
+	const struct device *encoder;
+
+	struct encoder_state encoder_state;
+	enum encoder_direction encoder_dir;
 
 	bool enabled;
 	int pole_pairs;
-	float voltage_a, voltage_b, voltage_c;
 	float estimate_angle;
 	float electrical_angle;
 	float estimate_velocity;
@@ -65,8 +69,8 @@ struct motor {
 	float set_point_angle;
 };
 
-void motor_create(struct motor *motor, int pole_pairs, struct driver *driver,
-		  struct encoder *encoder);
+void motor_create(struct motor *motor, int pole_pairs, const struct device *inverter,
+		  const struct device *encoder);
 bool motor_init(struct motor *motor, float zero_electric_offset,
 		enum encoder_direction encoder_dir);
 void motor_set_enable(struct motor *motor, bool enable);

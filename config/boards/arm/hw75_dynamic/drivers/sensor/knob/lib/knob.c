@@ -15,8 +15,6 @@
 #include <knob/drivers/encoder.h>
 
 #if CONFIG_KNOB_PORT
-#include "port/driver.h"
-#include "port/encoder.h"
 #include "port/motor.h"
 #include "port/knob_sim.h"
 #endif
@@ -28,8 +26,6 @@ struct knob_data {
 	int32_t delta;
 
 #if CONFIG_KNOB_PORT
-	struct driver driver;
-	struct encoder encoder;
 	struct motor motor;
 	struct knob_sim knob;
 	int last_pos;
@@ -174,9 +170,7 @@ int knob_init(const struct device *dev)
 	}
 
 #if CONFIG_KNOB_PORT
-	driver_create(&data->driver, config->inverter);
-	encoder_create(&data->encoder, config->encoder);
-	motor_create(&data->motor, 7, &data->driver, &data->encoder);
+	motor_create(&data->motor, 7, config->inverter, config->encoder);
 	knob_sim_create(&data->knob);
 #else
 	data->last_radian = encoder_get_radian(config->encoder);
