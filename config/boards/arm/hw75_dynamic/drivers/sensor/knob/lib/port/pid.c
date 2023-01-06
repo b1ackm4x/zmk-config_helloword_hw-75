@@ -1,6 +1,8 @@
 #include "pid.h"
-#include "time_utils.h"
-#include "math_utils.h"
+
+#include <sys/util_macro.h>
+
+#include <knob/time.h>
 
 void pid_create(struct pid_controller *pid, float p, float i, float d, float ramp, float limit)
 {
@@ -12,7 +14,7 @@ void pid_create(struct pid_controller *pid, float p, float i, float d, float ram
 	pid->error_last = 0;
 	pid->output_last = 0;
 	pid->integral_last = 0;
-	pid->timestamp = micros();
+	pid->timestamp = time_us();
 }
 
 void pid_set(struct pid_controller *pid, float p, float i, float d)
@@ -24,7 +26,7 @@ void pid_set(struct pid_controller *pid, float p, float i, float d)
 
 float pid_error(struct pid_controller *pid, float error)
 {
-	uint32_t time = micros();
+	uint32_t time = time_us();
 	float dt = (float)(time - pid->timestamp) * 1e-6f;
 	// Quick fix for strange cases (micros overflow)
 	if (dt <= 0 || dt > 0.5f)
@@ -32,11 +34,11 @@ float pid_error(struct pid_controller *pid, float error)
 
 	float pTerm = pid->p * error;
 	float iTerm = pid->integral_last + pid->i * dt * 0.5f * (error + pid->error_last);
-	iTerm = CONSTRAINT(iTerm, -pid->limit, pid->limit);
+	iTerm = CLAMP(iTerm, -pid->limit, pid->limit);
 	float dTerm = pid->d * (error - pid->error_last) / dt;
 
 	float output = pTerm + iTerm + dTerm;
-	output = CONSTRAINT(output, -pid->limit, pid->limit);
+	output = CLAMP(output, -pid->limit, pid->limit);
 
 	// If output ramp defined
 	if (pid->output_ramp > 0) {

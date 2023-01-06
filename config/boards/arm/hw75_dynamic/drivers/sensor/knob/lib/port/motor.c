@@ -2,6 +2,9 @@
 
 #include <string.h>
 #include <math.h>
+#include <arm_math.h>
+
+#include <knob/math.h>
 
 #include <logging/log.h>
 LOG_MODULE_REGISTER(port_motor, CONFIG_ZMK_LOG_LEVEL);
@@ -78,9 +81,9 @@ float motor_get_estimate_velocity(struct motor *motor)
 
 float motor_get_electrical_angle(struct motor *motor)
 {
-	return Normalize((float)(motor->encoder->count_direction * motor->pole_pairs) *
-				 encoder_get_lap_angle(motor->encoder) -
-			 motor->zero_electric_angle_offset);
+	return norm_rad((float)(motor->encoder->count_direction * motor->pole_pairs) *
+				encoder_get_lap_angle(motor->encoder) -
+			motor->zero_electric_angle_offset);
 }
 
 void motor_tick(struct motor *motor)
@@ -166,16 +169,17 @@ void motor_set_phase_voltage(struct motor *motor, float voltage_q, float voltage
 	float uOut;
 
 	if (voltage_d != 0) {
-		uOut = SQRT(voltage_d * voltage_d + voltage_q * voltage_q) /
-		       motor->driver->voltage_power_supply;
-		angle_electrical = Normalize(angle_electrical + atan2(voltage_q, voltage_d));
+		float tmp;
+		arm_sqrt_f32(voltage_d * voltage_d + voltage_q * voltage_q, &tmp);
+		uOut = tmp / motor->driver->voltage_power_supply;
+		angle_electrical = norm_rad(angle_electrical + atan2(voltage_q, voltage_d));
 	} else {
 		uOut = voltage_q / motor->driver->voltage_power_supply;
-		angle_electrical = Normalize(angle_electrical + _PI_2);
+		angle_electrical = norm_rad(angle_electrical + PI_2);
 	}
-	uint8_t sec = (int)(floor(angle_electrical / _PI_3)) + 1;
-	float t1 = _SQRT3 * SinApprox(((float)(sec)) * _PI_3 - angle_electrical) * uOut;
-	float t2 = _SQRT3 * SinApprox(angle_electrical - (((float)(sec)) - 1.0f) * _PI_3) * uOut;
+	uint8_t sec = (int)(floor(angle_electrical / PI_3)) + 1;
+	float t1 = SQRT3 * arm_sin_f32(((float)(sec)) * PI_3 - angle_electrical) * uOut;
+	float t2 = SQRT3 * arm_sin_f32(angle_electrical - (((float)(sec)) - 1.0f) * PI_3) * uOut;
 	float t0 = 1 - t1 - t2;
 
 	float tA, tB, tC;

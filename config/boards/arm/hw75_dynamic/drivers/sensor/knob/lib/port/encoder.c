@@ -1,7 +1,10 @@
 #include "encoder.h"
-#include "time_utils.h"
 #include "math_utils.h"
 
+#include <kernel.h>
+
+#include <knob/time.h>
+#include <knob/math.h>
 #include <knob/drivers/encoder.h>
 
 #include <logging/log.h>
@@ -24,17 +27,17 @@ void encoder_init(struct encoder *encoder)
 	// Initialize all the internal variables of EncoderBase
 	// to ensure a "smooth" startup (without a 'jump' from zero)
 	encoder_get_raw_angle(encoder);
-	delay_micro_seconds(1);
+	k_usleep(1);
 
 	encoder->velocity_last = encoder_get_raw_angle(encoder);
-	encoder->velocity_timestamp = micros();
+	encoder->velocity_timestamp = time_us();
 	k_msleep(1);
 
 	encoder_get_raw_angle(encoder);
-	delay_micro_seconds(1);
+	k_usleep(1);
 
 	encoder->angle_last = encoder_get_raw_angle(encoder);
-	encoder->angle_timestamp = micros();
+	encoder->angle_timestamp = time_us();
 }
 
 float encoder_get_raw_angle(struct encoder *encoder)
@@ -45,11 +48,11 @@ float encoder_get_raw_angle(struct encoder *encoder)
 void encoder_update(struct encoder *encoder)
 {
 	float angle = encoder_get_raw_angle(encoder);
-	encoder->angle_timestamp = micros();
+	encoder->angle_timestamp = time_us();
 
 	float deltaAngle = angle - encoder->angle_last;
 	// If overflow happened track it as full rotation
-	if (ABS(deltaAngle) > (0.8f * _2PI))
+	if (fabsf(deltaAngle) > (0.8f * PI2))
 		encoder->rotation_count += (deltaAngle > 0) ? -1 : 1;
 
 	encoder->angle_last = angle;
@@ -62,7 +65,7 @@ float encoder_get_lap_angle(struct encoder *encoder)
 
 float encoder_get_full_angle(struct encoder *encoder)
 {
-	return (float)encoder->rotation_count * _2PI + encoder->angle_last;
+	return (float)encoder->rotation_count * PI2 + encoder->angle_last;
 }
 
 float encoder_get_velocity(struct encoder *encoder)
@@ -73,7 +76,7 @@ float encoder_get_velocity(struct encoder *encoder)
 		time = 1e-3f;
 
 	// velocity calculation
-	float vel = ((float)(encoder->rotation_count - encoder->rotation_count_last) * _2PI +
+	float vel = ((float)(encoder->rotation_count - encoder->rotation_count_last) * PI2 +
 		     (encoder->angle_last - encoder->velocity_last)) /
 		    time;
 

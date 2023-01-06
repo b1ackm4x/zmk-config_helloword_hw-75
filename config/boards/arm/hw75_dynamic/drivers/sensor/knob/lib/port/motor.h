@@ -39,12 +39,17 @@ struct motor_state {
 	float est_velocity;
 };
 
+struct motor_voltage {
+	float d;
+	float q;
+};
+
 struct motor {
 	float target;
 	enum motor_error error;
 	struct motor_config config;
 	struct motor_state state;
-	struct DqVoltage_t voltage;
+	struct motor_voltage voltage;
 	float zero_electric_angle_offset;
 	struct driver *driver;
 	struct encoder *encoder;

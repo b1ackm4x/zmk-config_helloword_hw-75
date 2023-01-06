@@ -6,6 +6,8 @@
 
 #include <math.h>
 
+#include <knob/math.h>
+
 #include <logging/log.h>
 LOG_MODULE_REGISTER(port_knob, CONFIG_ZMK_LOG_LEVEL);
 
@@ -99,7 +101,7 @@ void knob_sim_tick(struct knob_sim *knob)
 	case MODE_INERTIA: {
 		float v = knob_sim_get_velocity(knob);
 		if (v > 1.0f || v < -1.0f) {
-			if (ABS(v - knob->last_velocity) > 0.3f)
+			if (fabsf(v - knob->last_velocity) > 0.3f)
 				knob->motor->target = v;
 		} else {
 			knob->motor->target = 0.0f;
@@ -108,12 +110,12 @@ void knob_sim_tick(struct knob_sim *knob)
 	} break;
 	case MODE_ENCODER: {
 		float a = knob_sim_get_position(knob);
-		if (a - knob->last_angle > _PI / (float)knob->encoder_divides) {
-			knob->motor->target += _2PI / (float)knob->encoder_divides;
+		if (a - knob->last_angle > PI / (float)knob->encoder_divides) {
+			knob->motor->target += PI2 / (float)knob->encoder_divides;
 			knob->last_angle = knob->motor->target;
 			knob->encoder_position++;
-		} else if (a - knob->last_angle < -_PI / (float)knob->encoder_divides) {
-			knob->motor->target -= _2PI / (float)knob->encoder_divides;
+		} else if (a - knob->last_angle < -PI / (float)knob->encoder_divides) {
+			knob->motor->target -= PI2 / (float)knob->encoder_divides;
 			knob->last_angle = knob->motor->target;
 			knob->encoder_position--;
 		}
@@ -169,7 +171,7 @@ float knob_sim_get_velocity(struct knob_sim *knob)
 
 int knob_sim_get_encoder_mode_pos(struct knob_sim *knob)
 {
-	return lround(knob_sim_get_position(knob) / (_2PI / (float)knob->encoder_divides));
+	return lround(knob_sim_get_position(knob) / (PI2 / (float)knob->encoder_divides));
 }
 
 void knob_sim_set_enable(struct knob_sim *knob, bool en)
